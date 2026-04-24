@@ -1,0 +1,6 @@
+{
+  "name": "Ritmo Latino",
+  "description": "Una réplica de Spotify centrada en los ritmos más populares de Latinoamérica, con recomendaciones inteligentes y vistas previas de canciones.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

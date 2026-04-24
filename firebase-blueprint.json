@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "Song": {
+      "title": "Song",
+      "description": "Metadata for a music track",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "genre": { "type": "string" },
+        "releaseDate": { "type": "string" },
+        "duration": { "type": "number", "description": "Duration in seconds" },
+        "previewUrl": { "type": "string", "description": "30s preview URL from Apple Music" },
+        "artworkUrl": { "type": "string" },
+        "appleMusicId": { "type": "string" }
+      },
+      "required": ["title", "author", "genre", "previewUrl"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "preferredGenres": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["uid", "email"]
+    },
+    "Playlist": {
+      "title": "Playlist",
+      "description": "A collection of songs curated by a user or system",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "isPublic": { "type": "boolean" },
+        "songIds": { "type": "array", "items": { "type": "string" } },
+        "artworkUrl": { "type": "string" }
+      },
+      "required": ["title", "ownerId", "songIds"]
+    },
+    "PlaybackHistory": {
+      "title": "PlaybackHistory",
+      "description": "Tracks what songs the user listens to for recommendations",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "songId": { "type": "string" },
+        "genre": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "songId", "genre", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/songs/{songId}": { "schema": "Song", "description": "Global catalog of songs" },
+    "/users/{userId}": { "schema": "User", "description": "User profiles" },
+    "/playlists/{playlistId}": { "schema": "Playlist", "description": "User and system playlists" },
+    "/history/{historyId}": { "schema": "PlaybackHistory", "description": "User listening history" }
+  }
+}
