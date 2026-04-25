@@ -2,25 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   collection, 
   query, 
-  where, 
   onSnapshot, 
   addDoc, 
   serverTimestamp,
   getDocs,
-  limit
 } from 'firebase/firestore';
-import { 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  signOut, 
-  User, 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  sendEmailVerification 
-} from 'firebase/auth';
-import { auth, db, googleProvider } from './lib/firebase';
-import { Song, LATIN_GENRES, PlaybackHistory } from './types';
-import { Play, Pause, SkipBack, SkipForward, Volume2, Search, Home, Library, PlusSquare, Music, User as UserIcon, LogOut } from 'lucide-react';
+import { db } from './lib/firebase';
+import { Song, LATIN_GENRES } from './types';
+import { Play, Pause, SkipBack, SkipForward, Volume2, Search, Home, Library, PlusSquare, Music } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { seedLibrary } from './lib/seeder';
 
@@ -176,118 +165,29 @@ const SongCard = ({ song, isActive, onClick }: SongCardProps) => (
 // --- Main App ---
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
   const [songs, setSongs] = useState<Song[]>([]);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
   const [progress, setProgress] = useState(0);
-  
-  // Auth Form State
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
-
-  const DEMO_EMAIL = 'bernardobdms20@gmail.com';
-  const DEMO_PASS = 'Medina20';
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressInterval = useRef<number | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      if (u) {
-        // Enforce email verification for email/password users (Skip for demo user)
-        const isDemo = u.email === DEMO_EMAIL;
-        if (!isDemo && u.providerData.some(p => p.providerId === 'password') && !u.emailVerified) {
-          setIsVerifying(true);
-        } else {
-          setIsVerifying(false);
-        }
-        setUser(u);
-        
-        // Initial seed if no songs exist
-        const snap = await getDocs(collection(db, 'songs'));
-        if (snap.empty) seedLibrary();
-      } else {
-        setUser(null);
-        setIsVerifying(false);
-      }
+    getDocs(collection(db, 'songs')).then(snap => {
+      if (snap.empty) seedLibrary();
     });
-    return unsubscribe;
   }, []);
 
-  const handleEmailAuth = async (e?: React.FormEvent, customEmail?: string, customPass?: string) => {
-    if (e) e.preventDefault();
-    setAuthError(null);
-    const targetEmail = customEmail || email;
-    const targetPass = customPass || password;
-
-    try {
-      if (authMode === 'signup' && !customEmail) {
-        const cred = await createUserWithEmailAndPassword(auth, targetEmail, targetPass);
-        await sendEmailVerification(cred.user);
-        setIsVerifying(true);
-      } else {
-        const cred = await signInWithEmailAndPassword(auth, targetEmail, targetPass);
-        const isDemo = cred.user.email === DEMO_EMAIL;
-        if (!isDemo && !cred.user.emailVerified) {
-          await sendEmailVerification(cred.user);
-          setIsVerifying(true);
-        }
-      }
-    } catch (error: any) {
-      let message = error.message;
-      if (error.code === 'auth/email-already-in-use') {
-        message = 'EL CORREO YA ESTÁ EN USO. PRUEBA A INICIAR SESIÓN.';
-      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-        message = 'CORREO O CONTRASEÑA INCORRECTOS.';
-      } else if (error.code === 'auth/weak-password') {
-        message = 'LA CONTRASEÑA DEBE TENER AL MENOS 6 CARACTERES.';
-      }
-      setAuthError(message.toUpperCase());
-    }
-  };
-
-  const handleDemoLogin = () => {
-    setAuthMode('login');
-    handleEmailAuth(undefined, DEMO_EMAIL, DEMO_PASS);
-  };
-
-  const handleResendVerification = async () => {
-    if (auth.currentUser) {
-      try {
-        await sendEmailVerification(auth.currentUser);
-        alert('Correo de verificación re-enviado. Revisa tu bandeja de entrada.');
-      } catch (error: any) {
-        setAuthError(error.message);
-      }
-    }
-  };
-
-  const handleCheckVerificationStatus = async () => {
-    if (auth.currentUser) {
-      await auth.currentUser.reload();
-      if (auth.currentUser.emailVerified) {
-        setIsVerifying(false);
-        setUser({ ...auth.currentUser });
-      } else {
-        alert('El correo aún no ha sido verificado.');
-      }
-    }
-  };
-
   useEffect(() => {
-    if (!user || isVerifying) return;
     const q = query(collection(db, 'songs'));
     const unsubscribe = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Song));
       setSongs(docs);
     });
     return unsubscribe;
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     if (isPlaying) {
@@ -319,15 +219,13 @@ export default function App() {
     audioRef.current = audio;
     play();
 
-    // Log history for recommendations
-    if (user) {
-      addDoc(collection(db, 'history'), {
-        userId: user.uid,
-        songId: song.id,
-        genre: song.genre,
-        timestamp: serverTimestamp()
-      });
-    }
+    // Log history for recommendations (Guest mode)
+    addDoc(collection(db, 'history'), {
+      userId: 'guest',
+      songId: song.id,
+      genre: song.genre,
+      timestamp: serverTimestamp()
+    });
   };
 
   const play = () => {
@@ -360,124 +258,6 @@ export default function App() {
     handlePlaySong(songs[prevIndex]);
   };
 
-  const handleLogin = () => signInWithPopup(auth, googleProvider);
-  const handleLogout = () => signOut(auth);
-
-  if (isVerifying) {
-    return (
-      <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-white text-center">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full bg-zinc-900 border border-white/5 p-12 rounded-[32px] shadow-2xl relative"
-        >
-          <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
-          <h2 className="text-3xl font-black mb-4 tracking-tighter">VERIFICA TU CORREO</h2>
-          <p className="text-zinc-400 mb-8 leading-relaxed">
-            Hemos enviado un enlace de confirmación a <span className="text-white font-bold">{user?.email}</span>. 
-            Por favor, verifícalo para continuar.
-          </p>
-          <div className="flex flex-col gap-4">
-            <button 
-              onClick={handleCheckVerificationStatus}
-              className="w-full bg-emerald-500 text-black font-black py-4 rounded-full hover:scale-105 transition-all shadow-xl"
-            >
-              YA LO VERIFIQUÉ
-            </button>
-            <button 
-              onClick={handleResendVerification}
-              className="text-sm text-zinc-500 hover:text-white transition-colors font-bold uppercase tracking-widest"
-            >
-              Re-enviar correo
-            </button>
-            <button 
-              onClick={handleLogout}
-              className="text-sm text-zinc-500 hover:text-red-400 transition-colors font-bold uppercase tracking-widest"
-            >
-              Cancelar / Salir
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-white text-center">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-zinc-900 border border-white/5 p-10 rounded-[32px] shadow-2xl relative overflow-hidden"
-        >
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-600" />
-          <div className="flex items-center justify-center gap-2 mb-8">
-            <Music size={32} className="text-emerald-500" />
-            <h1 className="text-2xl font-black tracking-tighter uppercase">RITMO LATINO</h1>
-          </div>
-
-          <form onSubmit={(e) => handleEmailAuth(e)} className="space-y-4 mb-8">
-            <div>
-              <input 
-                type="email" 
-                placeholder="Correo electrónico" 
-                className="w-full bg-black/40 border border-white/10 p-4 rounded-2xl text-sm focus:border-emerald-500/50 outline-none transition-all"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <input 
-                type="password" 
-                placeholder="Contraseña" 
-                className="w-full bg-black/40 border border-white/10 p-4 rounded-2xl text-sm focus:border-emerald-500/50 outline-none transition-all"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            {authError && <p className="text-red-400 text-[10px] font-black tracking-tight leading-tight uppercase">{authError}</p>}
-            <button 
-              type="submit"
-              className="w-full bg-emerald-500 text-black font-black py-4 rounded-full hover:scale-105 transition-all shadow-xl uppercase tracking-widest"
-            >
-              {authMode === 'signup' ? 'REGISTRARME' : 'INICIAR SESIÓN'}
-            </button>
-          </form>
-
-          <button 
-            onClick={handleDemoLogin}
-            className="w-full bg-orange-600/20 text-orange-400 font-black py-3 rounded-2xl hover:bg-orange-600/30 transition-all border border-orange-500/20 uppercase tracking-widest text-xs mb-4"
-          >
-            Acceso Rápido (Bernardo)
-          </button>
-
-          <div className="flex items-center gap-4 mb-8">
-            <div className="h-px bg-white/5 flex-grow" />
-            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">O</span>
-            <div className="h-px bg-white/5 flex-grow" />
-          </div>
-
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-white/5 text-white font-bold py-4 rounded-full flex items-center justify-center gap-3 hover:bg-white/10 transition-all border border-white/10"
-          >
-            <UserIcon size={18} />
-            CON GOOGLE
-          </button>
-
-          <button 
-            onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
-            className="mt-8 text-xs text-zinc-400 hover:text-white transition-colors block mx-auto underline font-medium"
-          >
-            {authMode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
   return (
     <div className="h-screen flex flex-col bg-zinc-950 text-white font-sans overflow-hidden">
       <div className="flex flex-grow overflow-hidden">
@@ -498,14 +278,7 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-4">
-              <button className="text-[10px] uppercase font-black bg-white/5 hover:bg-white/10 px-4 py-2 rounded-full border border-white/10 transition-all tracking-widest">Admin Dashboard</button>
-              <div className="flex items-center gap-2 bg-zinc-900 rounded-full pr-3 pl-1 py-1 border border-white/5 hover:border-emerald-500/30 transition-all cursor-pointer group shadow-xl">
-                <div className="w-7 h-7 bg-emerald-900 rounded-full flex items-center justify-center text-[10px] font-black text-emerald-400 uppercase">
-                  {user.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-tighter text-zinc-200">{user.displayName}</span>
-                <button onClick={handleLogout} className="text-zinc-600 group-hover:text-emerald-500 transition-colors ml-1"><LogOut size={12} /></button>
-              </div>
+              <button className="text-[10px] uppercase font-black bg-white/5 hover:bg-white/10 px-4 py-2 rounded-full border border-white/10 transition-all tracking-widest text-[#e4e4e7]">Invitado</button>
             </div>
           </header>
 
