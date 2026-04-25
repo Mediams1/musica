@@ -9,7 +9,15 @@ import {
   getDocs,
   limit
 } from 'firebase/firestore';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  signOut, 
+  User, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  sendEmailVerification 
+} from 'firebase/auth';
 import { auth, db, googleProvider } from './lib/firebase';
 import { Song, LATIN_GENRES, PlaybackHistory } from './types';
 import { Play, Pause, SkipBack, SkipForward, Volume2, Search, Home, Library, PlusSquare, Music, User as UserIcon, LogOut } from 'lucide-react';
@@ -174,23 +182,80 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
   const [progress, setProgress] = useState(0);
+  
+  // Auth Form State
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressInterval = useRef<number | null>(null);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       if (u) {
+        // Enforce email verification for email/password users
+        if (u.providerData.some(p => p.providerId === 'password') && !u.emailVerified) {
+          setIsVerifying(true);
+        } else {
+          setIsVerifying(false);
+        }
+        setUser(u);
+        
         // Initial seed if no songs exist
-        getDocs(collection(db, 'songs')).then(snap => {
-          if (snap.empty) seedLibrary();
-        });
+        const snap = await getDocs(collection(db, 'songs'));
+        if (snap.empty) seedLibrary();
+      } else {
+        setUser(null);
+        setIsVerifying(false);
       }
     });
+    return unsubscribe;
   }, []);
 
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    try {
+      if (authMode === 'signup') {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        await sendEmailVerification(cred.user);
+        setIsVerifying(true);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (error: any) {
+      setAuthError(error.message);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (auth.currentUser) {
+      try {
+        await sendEmailVerification(auth.currentUser);
+        alert('Correo de verificación re-enviado. Revisa tu bandeja de entrada.');
+      } catch (error: any) {
+        setAuthError(error.message);
+      }
+    }
+  };
+
+  const handleCheckVerificationStatus = async () => {
+    if (auth.currentUser) {
+      await auth.currentUser.reload();
+      if (auth.currentUser.emailVerified) {
+        setIsVerifying(false);
+        setUser({ ...auth.currentUser });
+      } else {
+        alert('El correo aún no ha sido verificado.');
+      }
+    }
+  };
+
   useEffect(() => {
-    if (!user) return;
+    if (!user || isVerifying) return;
     const q = query(collection(db, 'songs'));
     const unsubscribe = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Song));
@@ -273,26 +338,109 @@ export default function App() {
   const handleLogin = () => signInWithPopup(auth, googleProvider);
   const handleLogout = () => signOut(auth);
 
+  if (isVerifying) {
+    return (
+      <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-white text-center">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-zinc-900 border border-white/5 p-12 rounded-[32px] shadow-2xl relative"
+        >
+          <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500" />
+          <h2 className="text-3xl font-black mb-4 tracking-tighter">VERIFICA TU CORREO</h2>
+          <p className="text-zinc-400 mb-8 leading-relaxed">
+            Hemos enviado un enlace de confirmación a <span className="text-white font-bold">{user?.email}</span>. 
+            Por favor, verifícalo para continuar.
+          </p>
+          <div className="flex flex-col gap-4">
+            <button 
+              onClick={handleCheckVerificationStatus}
+              className="w-full bg-emerald-500 text-black font-black py-4 rounded-full hover:scale-105 transition-all shadow-xl"
+            >
+              YA LO VERIFIQUÉ
+            </button>
+            <button 
+              onClick={handleResendVerification}
+              className="text-sm text-zinc-500 hover:text-white transition-colors font-bold uppercase tracking-widest"
+            >
+              Re-enviar correo
+            </button>
+            <button 
+              onClick={handleLogout}
+              className="text-sm text-zinc-500 hover:text-red-400 transition-colors font-bold uppercase tracking-widest"
+            >
+              Cancelar / Salir
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-white text-center">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-zinc-900 border border-white/5 p-12 rounded-[32px] shadow-2xl relative overflow-hidden"
+          className="max-w-md w-full bg-zinc-900 border border-white/5 p-10 rounded-[32px] shadow-2xl relative overflow-hidden"
         >
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-600 via-yellow-500 to-orange-600" />
-          <Music size={64} className="mx-auto mb-8 text-orange-500" />
-          <h1 className="text-4xl font-black mb-4 tracking-tighter">RITMO LATINO</h1>
-          <p className="text-zinc-400 mb-8 leading-relaxed">Reproduce los mejores ritmos de Latinoamérica. Gratis, rápido y con la mejor calidad.</p>
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-600" />
+          <div className="flex items-center justify-center gap-2 mb-8">
+            <Music size={32} className="text-emerald-500" />
+            <h1 className="text-2xl font-black tracking-tighter uppercase">RITMO LATINO</h1>
+          </div>
+
+          <form onSubmit={handleEmailAuth} className="space-y-4 mb-8">
+            <div>
+              <input 
+                type="email" 
+                placeholder="Correo electrónico" 
+                className="w-full bg-black/40 border border-white/10 p-4 rounded-2xl text-sm focus:border-emerald-500/50 outline-none transition-all"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <input 
+                type="password" 
+                placeholder="Contraseña" 
+                className="w-full bg-black/40 border border-white/10 p-4 rounded-2xl text-sm focus:border-emerald-500/50 outline-none transition-all"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            {authError && <p className="text-red-400 text-xs font-bold uppercase">{authError}</p>}
+            <button 
+              type="submit"
+              className="w-full bg-emerald-500 text-black font-black py-4 rounded-full hover:scale-105 transition-all shadow-xl uppercase tracking-widest"
+            >
+              {authMode === 'signup' ? 'REGISTRARME' : 'INICIAR SESIÓN'}
+            </button>
+          </form>
+
+          <div className="flex items-center gap-4 mb-8">
+            <div className="h-px bg-white/5 flex-grow" />
+            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">O</span>
+            <div className="h-px bg-white/5 flex-grow" />
+          </div>
+
           <button 
             onClick={handleLogin}
-            className="w-full bg-white text-black font-black py-4 rounded-full flex items-center justify-center gap-3 hover:scale-105 transition-all shadow-xl"
+            className="w-full bg-white/5 text-white font-bold py-4 rounded-full flex items-center justify-center gap-3 hover:bg-white/10 transition-all border border-white/10"
           >
-            <UserIcon size={20} />
-            CONTINUAR CON GOOGLE
+            <UserIcon size={18} />
+            CON GOOGLE
           </button>
-          <p className="mt-8 text-[10px] text-zinc-500 uppercase tracking-widest font-semibold font-mono">Verificación por correo integrada vía Google</p>
+
+          <button 
+            onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+            className="mt-8 text-xs text-zinc-400 hover:text-white transition-colors block mx-auto underline font-medium"
+          >
+            {authMode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
+          </button>
         </motion.div>
       </div>
     );
