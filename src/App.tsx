@@ -190,14 +190,18 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
+  const DEMO_EMAIL = 'bernardobdms20@gmail.com';
+  const DEMO_PASS = 'Medina20';
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressInterval = useRef<number | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       if (u) {
-        // Enforce email verification for email/password users
-        if (u.providerData.some(p => p.providerId === 'password') && !u.emailVerified) {
+        // Enforce email verification for email/password users (Skip for demo user)
+        const isDemo = u.email === DEMO_EMAIL;
+        if (!isDemo && u.providerData.some(p => p.providerId === 'password') && !u.emailVerified) {
           setIsVerifying(true);
         } else {
           setIsVerifying(false);
@@ -215,33 +219,41 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleEmailAuth = async (e?: React.FormEvent, customEmail?: string, customPass?: string) => {
+    if (e) e.preventDefault();
     setAuthError(null);
+    const targetEmail = customEmail || email;
+    const targetPass = customPass || password;
+
     try {
-      if (authMode === 'signup') {
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
+      if (authMode === 'signup' && !customEmail) {
+        const cred = await createUserWithEmailAndPassword(auth, targetEmail, targetPass);
         await sendEmailVerification(cred.user);
         setIsVerifying(true);
       } else {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
-        if (!cred.user.emailVerified) {
+        const cred = await signInWithEmailAndPassword(auth, targetEmail, targetPass);
+        const isDemo = cred.user.email === DEMO_EMAIL;
+        if (!isDemo && !cred.user.emailVerified) {
           await sendEmailVerification(cred.user);
           setIsVerifying(true);
         }
       }
     } catch (error: any) {
-      // Map Firebase errors to user friendly messages
       let message = error.message;
       if (error.code === 'auth/email-already-in-use') {
         message = 'EL CORREO YA ESTÁ EN USO. PRUEBA A INICIAR SESIÓN.';
-      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
         message = 'CORREO O CONTRASEÑA INCORRECTOS.';
       } else if (error.code === 'auth/weak-password') {
         message = 'LA CONTRASEÑA DEBE TENER AL MENOS 6 CARACTERES.';
       }
       setAuthError(message.toUpperCase());
     }
+  };
+
+  const handleDemoLogin = () => {
+    setAuthMode('login');
+    handleEmailAuth(undefined, DEMO_EMAIL, DEMO_PASS);
   };
 
   const handleResendVerification = async () => {
@@ -404,7 +416,7 @@ export default function App() {
             <h1 className="text-2xl font-black tracking-tighter uppercase">RITMO LATINO</h1>
           </div>
 
-          <form onSubmit={handleEmailAuth} className="space-y-4 mb-8">
+          <form onSubmit={(e) => handleEmailAuth(e)} className="space-y-4 mb-8">
             <div>
               <input 
                 type="email" 
@@ -425,7 +437,7 @@ export default function App() {
                 required
               />
             </div>
-            {authError && <p className="text-red-400 text-xs font-bold uppercase">{authError}</p>}
+            {authError && <p className="text-red-400 text-[10px] font-black tracking-tight leading-tight uppercase">{authError}</p>}
             <button 
               type="submit"
               className="w-full bg-emerald-500 text-black font-black py-4 rounded-full hover:scale-105 transition-all shadow-xl uppercase tracking-widest"
@@ -433,6 +445,13 @@ export default function App() {
               {authMode === 'signup' ? 'REGISTRARME' : 'INICIAR SESIÓN'}
             </button>
           </form>
+
+          <button 
+            onClick={handleDemoLogin}
+            className="w-full bg-orange-600/20 text-orange-400 font-black py-3 rounded-2xl hover:bg-orange-600/30 transition-all border border-orange-500/20 uppercase tracking-widest text-xs mb-4"
+          >
+            Acceso Rápido (Bernardo)
+          </button>
 
           <div className="flex items-center gap-4 mb-8">
             <div className="h-px bg-white/5 flex-grow" />
