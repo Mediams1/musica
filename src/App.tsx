@@ -224,10 +224,23 @@ export default function App() {
         await sendEmailVerification(cred.user);
         setIsVerifying(true);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        if (!cred.user.emailVerified) {
+          await sendEmailVerification(cred.user);
+          setIsVerifying(true);
+        }
       }
     } catch (error: any) {
-      setAuthError(error.message);
+      // Map Firebase errors to user friendly messages
+      let message = error.message;
+      if (error.code === 'auth/email-already-in-use') {
+        message = 'EL CORREO YA ESTÁ EN USO. PRUEBA A INICIAR SESIÓN.';
+      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+        message = 'CORREO O CONTRASEÑA INCORRECTOS.';
+      } else if (error.code === 'auth/weak-password') {
+        message = 'LA CONTRASEÑA DEBE TENER AL MENOS 6 CARACTERES.';
+      }
+      setAuthError(message.toUpperCase());
     }
   };
 
